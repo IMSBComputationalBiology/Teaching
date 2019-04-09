@@ -1,0 +1,194 @@
+---
+title: 'Biostatistics II: K-means, Hierarchical clustering'
+date: "`r doc_date()`"
+output: 
+    BiocStyle::html_document:
+        toc: true
+        highlight: tango
+---
+
+```{r lib setup, include=FALSE}
+library(ggplot2)
+library(plotly)
+library("ggfortify")
+```
+
+## Materials 
+
+* Course materials are [here.](http://imsieweb.uni-koeln.de/bioinformatik/lehre/biostatistik/)
+* Login: CB   
+* Password: IMSB
+
+The list of exercises if [here.](./)
+
+# Exercises: K-means, Hierarchical clustering
+
+## Exercise 1
+
+```{r}
+require(graphics)
+
+load("../exercises_pca_kmeans/halfmoon.RData")
+halfmoon = as.data.frame(halfmoon)
+
+plot(halfmoon[, c("x", "y")])
+plot(halfmoon[ , c("x", "y")], col = as.factor(halfmoon[,c("labels")]))
+```
+
+```{r, eval = FALSE}
+# be careful not tu use the whole data.frame halfmoon for plotting or clustering,
+#   as it has 3 columns: x, y, labels
+# see what happens if you plot it:
+plot(halfmoon)
+```
+
+## Exercise 2
+
+```{r, eval = TRUE}
+km2 <- kmeans(halfmoon[, c("x", "y")], 2)
+plot(halfmoon[, c("x", "y")], col = km2$cluster)
+```
+
+
+## Exercise 3-4
+
+```{r, eval = TRUE}
+head(halfmoon)
+
+dist_hmoon <- dist(halfmoon[, c("x","y")], 
+                   method = "euclidean")
+
+hc_complete <- hclust(dist_hmoon, method = "complete")
+hc_ave      <- hclust(dist_hmoon, method = "average")
+hc_single   <- hclust(dist_hmoon, method = "single")
+```
+
+Plot the trees for each method:
+```{r}
+plot(hc_complete)
+plot(hc_ave)
+plot(hc_single)
+
+```
+
+Plot the roots of the trees (only 2 clusters):
+```{r}
+root_hc_complete <- cutree(hc_complete, k = 2)
+root_hc_ave <- cutree(hc_ave, k = 2)
+root_hc_single <- cutree(hc_single, k = 2)
+
+plot(root_hc_single)
+plot(root_hc_complete)
+plot(root_hc_ave)
+```
+
+Plot the 
+
+```{r}
+#check that labels are correctly mapped to the data points
+stopifnot(names(halfmoon[, c("labels")]) == names(root_hc_complete))
+table(halfmoon[, c("labels")] == root_hc_complete - 1)
+
+plot(halfmoon[, c("x","y")], col = as.factor(root_hc_complete))
+plot(halfmoon[, c("x","y")], col = as.factor(root_hc_ave))
+plot(halfmoon[, c("x","y")], col = as.factor(root_hc_single))
+
+```
+
+```{r, eval = FALSE}
+# see what happens if you accidentally feed true labels into the clustering function
+dist_hmoon_wrong <- dist(halfmoon, 
+                   method = "euclidean")
+hc_single2   <- hclust(dist_hmoon_wrong, method = "single")
+```
+
+## Exercise 6
+
+Here we want to implement k-median or k-medoid clustering, and try it on the halfmoon data.
+
+We first write the main function, that calculated centers and labels
+```{r}
+kmedian <- function(data, k)
+{   
+    # k-median clustering for two-dimentional vectors
+    xx <- as.matrix(data)
+    m <- as.integer(nrow(xx))
+    stopifnot(m>0)
+    stopifnot(is.numeric(xx))
+    stopifnot(c("x", "y") %in% colnames(xx))
+    
+    # initialize k centers
+    centersIDs_0 <- sample(c(1:nrow(xx)), size = k, replace = FALSE)
+    centers_old <- xx[centersIDs_0, c("x", "y")]
+    centers <- centers_old
+    
+    update_happened = 1
+    n <- 0 # number of iterations the algorithm took
+    while (update_happened == 1)
+    {
+        # calculate labels
+        labels <- apply(xx[, c("x", "y")], 
+                        1, 
+                        FUN = function(z) get_label(z, centers = centers))
+        # redifine centers
+        centers_new <- update_centers(xx, labels)
+        
+        if (identical(centers, centers_new)){   
+            update_happened <- 0   
+        } else {   
+            centers <- centers_new   
+            n <- n + 1
+        }
+    }
+    
+    #plot(xx, col = as.factor(labels))
+    
+    res <- list(labels, centers, n)
+    return(res)
+    
+}
+```
+
+And to make the code easier to read, we use a couple of gelper functions:
+```{r}
+manhattan.dist <- function(x1, x2) 
+{   
+    # manhattan dist between 2 vectors
+    return(sum(abs(x1 - x2)))
+}
+
+get_label <- function(current_point, centers = centers)
+{
+    # find distance to the centers from a current point (manhattan)
+    dd <- apply(centers, 1, FUN = function(z)manhattan.dist(z, current_point))
+    # label from the center with minimal distance
+    current_label <- names(dd)[which(dd == min(dd))]
+    return(current_label)
+}
+
+update_centers <- function(xx, labels)
+{
+    # calculates medians by component 
+    # (not a point from the sets)
+    stopifnot(names(labels) == rownames(xx))
+    new_center_list <- by(xx, 
+                         INDICES = as.factor(labels), 
+                         FUN = function(z)
+                         {c(median(z$x), median(z$y))})
+    new_centers <- do.call("rbind",new_center_list)
+    rownames(new_centers) <- paste0("cent_",c(1:nrow(new_centers)))
+    colnames(new_centers) <- c("x", "y")
+    return(new_centers)
+}
+```
+
+Now, we finally apply our k-median clustering to the halfmoon data:
+```{r}
+####################################
+load("../exercises_pca_kmeans/halfmoon.RData")
+labels_and_centers <- kmedian(data = halfmoon[, c("x", "y")], k = 3)
+
+plot(halfmoon[, c("x", "y")], col = as.factor(labels_and_centers[[1]]))
+
+
+```
